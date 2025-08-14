@@ -3,6 +3,7 @@ from datetime import datetime
 from pymongo import MongoClient
 import pytz
 import base64
+import uuid
 
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
@@ -12,6 +13,10 @@ colombia = pytz.timezone("America/Bogota")
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
+
+# Clave dinámica para reiniciar file_uploader
+if "foto_key" not in st.session_state:
+    st.session_state["foto_key"] = str(uuid.uuid4())
 
 # === FORMULARIO ===
 st.title("📓 Diario de Campo - Moravia 2025")
@@ -42,21 +47,27 @@ int4 = st.text_area("4. Papel de la memoria en los procesos de transformación t
 int5 = st.text_area("5. Contradicciones en los procesos de intervención", key="int5")
 
 # --- Foto opcional ---
-foto = st.file_uploader("📷 Subir foto (opcional)", type=["jpg", "jpeg", "png"], key="foto")
+foto = st.file_uploader("📷 Subir foto (opcional)", type=["jpg", "jpeg", "png"], key=st.session_state["foto_key"])
 
 # === GUARDAR ===
 if st.button("💾 Guardar entrada"):
     fecha_hora = datetime.now(colombia)
+
+    # Guardar imagen si existe
+    foto_base64 = None
+    if foto is not None:
+        foto_bytes = foto.read()
+        if foto_bytes:
+            foto_base64 = base64.b64encode(foto_bytes).decode("utf-8")
+
     registro = {
         "fecha_hora": fecha_hora,
         "lugar": lugar.strip(),
         "contexto": [ctx1, ctx2, ctx3, ctx4, ctx5, ctx6],
         "investigacion": [inv1, inv2, inv3],
         "intervencion": [int1, int2, int3, int4, int5],
-        "foto": None
+        "foto": foto_base64
     }
-    if foto:
-        registro["foto"] = base64.b64encode(foto.read()).decode("utf-8")
     coleccion_moravia.insert_one(registro)
 
     st.success("✅ Entrada guardada correctamente.")
@@ -65,12 +76,15 @@ if st.button("💾 Guardar entrada"):
     for key in [
         "lugar", "ctx1", "ctx2", "ctx3", "ctx4", "ctx5", "ctx6",
         "inv1", "inv2", "inv3",
-        "int1", "int2", "int3", "int4", "int5", "foto"
+        "int1", "int2", "int3", "int4", "int5"
     ]:
         if key in st.session_state:
             del st.session_state[key]
 
-    st.rerun()  # recarga para mostrar limpio
+    # Reiniciar clave de foto para forzar limpieza
+    st.session_state["foto_key"] = str(uuid.uuid4())
+
+    st.rerun()
 
 # === HISTORIAL ===
 st.header("📜 Historial")
