@@ -18,7 +18,7 @@ st.title("📓 Diario de Campo - Moravia 2025")
 st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
 
 # === FORMULARIO PLEGADO ===
-with st.expander("🆕 Nueva entrada", expanded=False):
+with st.expander("Nueva entrada", expanded=False):
     with st.form("entrada_moravia", clear_on_submit=True):
         lugar = st.text_input("📍 Lugar o punto del recorrido", placeholder="Ej: Centro Cultural de Moravia")
 
@@ -67,12 +67,12 @@ with st.expander("🆕 Nueva entrada", expanded=False):
         st.success("✅ Entrada guardada correctamente.")
 
 # === HISTORIAL PLEGADO ===
-with st.expander("📜 Historial", expanded=False):
+with st.expander("Historial", expanded=False):
     registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
 
     for reg in registros:
         fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
-        with st.expander(f"📅 {fecha_str} — {reg.get('lugar', 'Sin lugar')}"):
+        with st.expander(f"{fecha_str} — {reg.get('lugar', 'Sin lugar')}"):
             st.markdown("**Elementos de Contexto**")
             for i, resp in enumerate(reg["contexto"], start=1):
                 st.write(f"{i}. {resp}")
