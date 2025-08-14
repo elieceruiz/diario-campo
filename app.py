@@ -18,31 +18,31 @@ st.title("📓 Diario de Campo - Moravia 2025")
 st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
 
 st.header("🆕 Nueva entrada")
-lugar = st.text_input("📍 Lugar o punto del recorrido", placeholder="Ej: Centro Cultural de Moravia")
+lugar = st.text_input("📍 Lugar o punto del recorrido", key="lugar", placeholder="Ej: Centro Cultural de Moravia")
 
 # --- Preguntas orientadoras ---
 st.subheader("A. Elementos de Contexto")
-ctx1 = st.text_area("1. Principales hitos en la transformación territorial")
-ctx2 = st.text_area("2. Actores individuales y colectivos claves en la configuración del territorio")
-ctx3 = st.text_area("3. Principales transformaciones urbanas y su impacto social")
-ctx4 = st.text_area("4. Relaciones intergeneracionales e interculturales")
-ctx5 = st.text_area("5. Tensiones/conflictos en la concepción del territorio")
-ctx6 = st.text_area("6. Matrices de opresión identificadas en el territorio")
+ctx1 = st.text_area("1. Principales hitos en la transformación territorial", key="ctx1")
+ctx2 = st.text_area("2. Actores individuales y colectivos claves en la configuración del territorio", key="ctx2")
+ctx3 = st.text_area("3. Principales transformaciones urbanas y su impacto social", key="ctx3")
+ctx4 = st.text_area("4. Relaciones intergeneracionales e interculturales", key="ctx4")
+ctx5 = st.text_area("5. Tensiones/conflictos en la concepción del territorio", key="ctx5")
+ctx6 = st.text_area("6. Matrices de opresión identificadas en el territorio", key="ctx6")
 
 st.subheader("B. Elementos asociados a la investigación")
-inv1 = st.text_area("1. Particularidades de la investigación en Moravia (técnicas, relación con grupos sociales, lugar del sujeto, alcances, quién investiga)")
-inv2 = st.text_area("2. Intereses que movilizan las investigaciones")
-inv3 = st.text_area("3. Nexos entre investigación – acción – transformación")
+inv1 = st.text_area("1. Particularidades de la investigación en Moravia (técnicas, relación con grupos sociales, lugar del sujeto, alcances, quién investiga)", key="inv1")
+inv2 = st.text_area("2. Intereses que movilizan las investigaciones", key="inv2")
+inv3 = st.text_area("3. Nexos entre investigación – acción – transformación", key="inv3")
 
 st.subheader("C. Elementos de la intervención")
-int1 = st.text_area("1. Actores que movilizan procesos de intervención barrial")
-int2 = st.text_area("2. Propuestas de intervención comunitarias (tipo, características)")
-int3 = st.text_area("3. Propuestas de intervención institucionales (tipo, características)")
-int4 = st.text_area("4. Papel de la memoria en los procesos de transformación territorial")
-int5 = st.text_area("5. Contradicciones en los procesos de intervención")
+int1 = st.text_area("1. Actores que movilizan procesos de intervención barrial", key="int1")
+int2 = st.text_area("2. Propuestas de intervención comunitarias (tipo, características)", key="int2")
+int3 = st.text_area("3. Propuestas de intervención institucionales (tipo, características)", key="int3")
+int4 = st.text_area("4. Papel de la memoria en los procesos de transformación territorial", key="int4")
+int5 = st.text_area("5. Contradicciones en los procesos de intervención", key="int5")
 
 # --- Foto opcional ---
-foto = st.file_uploader("📷 Subir foto (opcional)", type=["jpg", "jpeg", "png"])
+foto = st.file_uploader("📷 Subir foto (opcional)", type=["jpg", "jpeg", "png"], key="foto")
 
 # === GUARDAR ===
 if st.button("💾 Guardar entrada"):
@@ -58,7 +58,18 @@ if st.button("💾 Guardar entrada"):
     if foto:
         registro["foto"] = base64.b64encode(foto.read()).decode("utf-8")
     coleccion_moravia.insert_one(registro)
+
     st.success("✅ Entrada guardada correctamente.")
+
+    # Restablecer campos
+    for key in [
+        "lugar", "ctx1", "ctx2", "ctx3", "ctx4", "ctx5", "ctx6",
+        "inv1", "inv2", "inv3",
+        "int1", "int2", "int3", "int4", "int5", "foto"
+    ]:
+        st.session_state[key] = "" if key != "foto" else None
+
+    st.rerun()  # recarga para mostrar limpio
 
 # === HISTORIAL ===
 st.header("📜 Historial")
