@@ -14,6 +14,18 @@ client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
 
+# --- Limpieza diferida ---
+if "limpiar_form" in st.session_state and st.session_state["limpiar_form"]:
+    for key in [
+        "lugar", "ctx1", "ctx2", "ctx3", "ctx4", "ctx5", "ctx6",
+        "inv1", "inv2", "inv3",
+        "int1", "int2", "int3", "int4", "int5"
+    ]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.session_state["foto_key"] = str(uuid.uuid4())  # reiniciar uploader
+    st.session_state["limpiar_form"] = False
+
 # Clave dinámica para reiniciar file_uploader
 if "foto_key" not in st.session_state:
     st.session_state["foto_key"] = str(uuid.uuid4())
@@ -72,18 +84,8 @@ if st.button("💾 Guardar entrada"):
 
     st.success("✅ Entrada guardada correctamente.")
 
-    # Restablecer campos eliminando keys
-    for key in [
-        "lugar", "ctx1", "ctx2", "ctx3", "ctx4", "ctx5", "ctx6",
-        "inv1", "inv2", "inv3",
-        "int1", "int2", "int3", "int4", "int5"
-    ]:
-        if key in st.session_state:
-            del st.session_state[key]
-
-    # Reiniciar clave de foto para forzar limpieza
-    st.session_state["foto_key"] = str(uuid.uuid4())
-
+    # Activar limpieza diferida
+    st.session_state["limpiar_form"] = True
     st.rerun()
 
 # === HISTORIAL ===
