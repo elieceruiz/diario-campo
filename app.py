@@ -3,8 +3,6 @@ from datetime import datetime
 from pymongo import MongoClient
 import pytz
 import base64
-from PIL import Image, ImageDraw, ImageFont
-import io
 
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
@@ -14,39 +12,6 @@ colombia = pytz.timezone("America/Bogota")
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
-
-# === Función para crear emoji-calendario en español ===
-def generar_calendario(fecha, size=80):
-    meses_es = ["Ene", "Feb", "Mar", "Abr", "May", "Jun",
-                "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-    mes = meses_es[fecha.month - 1]
-    dia = f"{fecha.day:02d}"
-
-    img = Image.new("RGB", (size, size), "white")
-    draw = ImageDraw.Draw(img)
-
-    # Franja roja
-    draw.rectangle([0, 0, size, size * 0.25], fill=(220, 0, 0))
-
-    try:
-        font_mes = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(size * 0.3))
-        font_dia = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(size * 0.65))
-    except:
-        font_mes = ImageFont.load_default()
-        font_dia = ImageFont.load_default()
-
-    # Mes
-    w_mes, _ = draw.textsize(mes, font=font_mes)
-    draw.text(((size - w_mes) / 2, size * 0.02), mes, fill="white", font=font_mes)
-
-    # Día
-    w_dia, _ = draw.textsize(dia, font=font_dia)
-    draw.text(((size - w_dia) / 2, size * 0.3), dia, fill="black", font=font_dia)
-
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return buf
 
 # === FORMULARIO ===
 st.title("📓 Diario de Campo - Moravia 2025")
@@ -106,12 +71,8 @@ st.header("📜 Historial")
 registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
 
 for reg in registros:
-    fecha = reg["fecha_hora"].astimezone(colombia)
-    fecha_str = fecha.strftime("%Y-%m-%d %H:%M")
-
-    with st.expander(f"{reg.get('lugar', 'Sin lugar')} — {fecha_str}", expanded=False):
-        # Mostrar emoji-calendario dentro del expander
-        st.image(generar_calendario(fecha, size=60), width=60)
+    fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
+    with st.expander(f"📅 {fecha_str} — {reg.get('lugar', 'Sin lugar')}"):
         st.markdown("**Elementos de Contexto**")
         for i, resp in enumerate(reg["contexto"], start=1):
             st.write(f"{i}. {resp}")
