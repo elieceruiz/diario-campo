@@ -61,13 +61,14 @@ if st.button("💾 Guardar entrada"):
 
     st.success("✅ Entrada guardada correctamente.")
 
-    # Restablecer campos
+    # Restablecer campos solo si existen en session_state
     for key in [
         "lugar", "ctx1", "ctx2", "ctx3", "ctx4", "ctx5", "ctx6",
         "inv1", "inv2", "inv3",
         "int1", "int2", "int3", "int4", "int5", "foto"
     ]:
-        st.session_state[key] = "" if key != "foto" else None
+        if key in st.session_state:
+            st.session_state[key] = "" if key != "foto" else None
 
     st.rerun()  # recarga para mostrar limpio
 
