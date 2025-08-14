@@ -2,4 +2,3 @@ streamlit
 pymongo
 pytz
 Pillow
-reportlab
