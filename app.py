@@ -5,17 +5,26 @@ import pytz
 import base64
 from fpdf import FPDF
 import io
+import re
+import openai
+
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
 colombia = pytz.timezone("America/Bogota")
+
 # === CONEXIÓN A MONGO (DB independiente) ===
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
+
+openai.api_key = st.secrets["openai_api_key"]
+
 # === TÍTULO ===
 st.title("📓 Diario de Campo - Moravia 2025")
 st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
-# === FUNCIONES ===
+
+# === FUNCIONES ===================================================================================
+
 def generar_pdf(registros):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -44,11 +53,36 @@ def generar_pdf(registros):
             if resp.strip():
                 pdf.multi_cell(0, 8, f"{i}. {resp}")
         pdf.ln(5)
-    pdf_buffer = io.BytesIO()
     pdf_bytes = pdf.output(dest='S').encode('latin1')
     pdf_buffer = io.BytesIO(pdf_bytes)
     pdf_buffer.seek(0)
     return pdf_buffer
+
+def estructurar_registros_con_gpt(registros):
+    registros_ordenados = sorted(registros, key=lambda r: r["fecha_hora"])
+
+    prompt = "Organiza y resume estos registros de un diario de campo por lugar, en orden cronológico, resaltando los puntos más importantes:\n\n"
+    for reg in registros_ordenados:
+        fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
+        lugar = reg.get("lugar", "Sin lugar")
+        contexto = "\n".join([c for c in reg.get("contexto", []) if c.strip()])
+        investigacion = "\n".join([i for i in reg.get("investigacion", []) if i.strip()])
+        intervencion = "\n".join([iv for iv in reg.get("intervencion", []) if iv.strip()])
+        prompt += f"Fecha: {fecha}\nLugar: {lugar}\nContexto: {contexto}\nInvestigación: {investigacion}\nIntervención: {intervencion}\n---\n"
+    prompt += "\nResumen ordenado por lugar y fecha:"
+
+    try:
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=600,
+            temperature=0.5,
+            n=1
+        )
+        return response.choices[0].text.strip()
+    except Exception as e:
+        return f"Error con la API OpenAI: {str(e)}"
+
 # === FORMULARIO PLEGADO ===
 with st.expander("Nueva entrada", expanded=False):
     with st.form("entrada_moravia", clear_on_submit=True):
@@ -89,6 +123,7 @@ with st.expander("Nueva entrada", expanded=False):
         }
         coleccion_moravia.insert_one(registro)
         st.success("✅ Entrada guardada correctamente.")
+
 # === HISTORIAL PLEGADO ===
 with st.expander("Historial", expanded=False):
     registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
@@ -107,6 +142,7 @@ with st.expander("Historial", expanded=False):
             if reg.get("foto"):
                 img_bytes = base64.b64decode(reg["foto"])
                 st.image(img_bytes, use_container_width=True)
+
 # === BOTÓN PARA EXPORTAR PDF ===
 if st.button("📄 Exportar todo a PDF"):
     registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
@@ -120,3 +156,16 @@ if st.button("📄 Exportar todo a PDF"):
         )
     else:
         st.warning("No hay registros para exportar.")
+
+# === SEGUNDA PESTAÑA: Mostrar resumen con GPT ===
+tabs = st.tabs(["Base / Nuevo Registro", "Consulta con GPT"] + ["Centro Cultural", "Barbería", "Viveros", "Almuerzo"])
+
+with tabs[1]:
+    st.header("Consulta y resumen con GPT")
+    if st.button("Jalar y procesar registros con API GPT"):
+        registros = list(coleccion_moravia.find().sort("fecha_hora", 1))  # Lo antiguo primero
+        if not registros:
+            st.info("No hay registros para procesar.")
+        else:
+            resumen = estructurar_registros_con_gpt(registros)
+            st.text_area("Resumen generado por OpenAI GPT:", resumen, height=600)
