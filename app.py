@@ -6,30 +6,27 @@ import base64
 from fpdf import FPDF
 import io
 import re
-import openai
+import PyPDF2
+from openai import OpenAI
 
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
 colombia = pytz.timezone("America/Bogota")
 
-# === CONEXIÓN A MONGO (DB independiente) ===
+# === CONEXIÓN A MONGO ===
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
 
-openai.api_key = st.secrets["openai_api_key"]
+# === CLIENTE OPENAI ===
+openai_client = OpenAI(api_key=st.secrets["openai_api_key"])
 
-# === TÍTULO ===
-st.title("📓 Diario de Campo - Moravia 2025")
-st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
-
-# === FUNCIONES ===================================================================================
+# === FUNCIONES ===
 
 def generar_pdf(registros):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    # Agregar fuente Liberation Mono con soporte Unicode
     pdf.add_font("LiberationMono", "", "LiberationMono-Regular.ttf", uni=True)
     pdf.set_font("LiberationMono", size=12)
     pdf.cell(0, 10, "Diario de Campo - Moravia 2025", ln=True, align="C")
@@ -60,7 +57,6 @@ def generar_pdf(registros):
 
 def estructurar_registros_con_gpt(registros):
     registros_ordenados = sorted(registros, key=lambda r: r["fecha_hora"])
-
     prompt = "Organiza y resume estos registros de un diario de campo por lugar, en orden cronológico, resaltando los puntos más importantes:\n\n"
     for reg in registros_ordenados:
         fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
@@ -72,14 +68,16 @@ def estructurar_registros_con_gpt(registros):
     prompt += "\nResumen ordenado por lugar y fecha:"
 
     try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Eres un asistente que organiza y resume textos."},
+                {"role": "user", "content": prompt}
+            ],
             max_tokens=600,
             temperature=0.5,
-            n=1
         )
-        return response.choices[0].text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         return f"Error con la API OpenAI: {str(e)}"
 
@@ -157,15 +155,36 @@ if st.button("📄 Exportar todo a PDF"):
     else:
         st.warning("No hay registros para exportar.")
 
-# === SEGUNDA PESTAÑA: Mostrar resumen con GPT ===
-tabs = st.tabs(["Base / Nuevo Registro", "Consulta con GPT"] + ["Centro Cultural", "Barbería", "Viveros", "Almuerzo"])
+# === Nueva pestaña para subir PDF y procesar con GPT ===
+tabs = st.tabs(["Base / Nuevo Registro", "Procesar PDF con GPT"])
 
 with tabs[1]:
-    st.header("Consulta y resumen con GPT")
-    if st.button("Jalar y procesar registros con API GPT"):
-        registros = list(coleccion_moravia.find().sort("fecha_hora", 1))  # Lo antiguo primero
-        if not registros:
-            st.info("No hay registros para procesar.")
-        else:
-            resumen = estructurar_registros_con_gpt(registros)
-            st.text_area("Resumen generado por OpenAI GPT:", resumen, height=600)
+    st.header("Sube un PDF para procesar con OpenAI GPT")
+    uploaded_file = st.file_uploader("Selecciona un archivo PDF", type=["pdf"])
+
+    if uploaded_file is not None:
+        reader = PyPDF2.PdfReader(uploaded_file)
+        full_text = ""
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                full_text += text + "\n"
+
+        st.text_area("Texto extraído del PDF", full_text, height=300)
+
+        if st.button("Procesar texto con OpenAI"):
+            prompt = f"Dale sentido y haz un resumen organizado de este texto:\n\n{full_text}"
+            try:
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "Eres un asistente que organiza y resume textos."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=700,
+                    temperature=0.5,
+                )
+                resumen = response.choices[0].message.content.strip()
+                st.text_area("Resumen generado por OpenAI:", resumen, height=400)
+            except Exception as e:
+                st.error(f"Error al llamar a OpenAI: {e}")
