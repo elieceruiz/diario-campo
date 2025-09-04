@@ -137,12 +137,25 @@ if st.button("📄 Exportar todo a PDF"):
         st.warning("No hay registros para exportar.")
 
 # === Pestañas ===
+if "texto_ia" not in st.session_state:
+    st.session_state["texto_ia"] = ""
+
 tabs = st.tabs(["Base / Nuevo registro", "Procesar registros con IA"])
+
+with tabs[0]:
+    st.write("### Debug / Mensajes")
+    st.write(st.session_state.get("texto_ia", "Aquí se mostrarán resultados o errores del procesamiento IA."))
 
 with tabs[1]:
     st.header("Organizar y limpiar registros con OpenAI (sin resumir)")
 
     if st.button("Organizar y limpiar registros con IA sin resumir"):
-        registros = list(coleccion_moravia.find())
-        texto_limpio = prompt_organizador_sin_resumir(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
-        st.text_area("Registros limpios y estructurados", texto_limpio, height=600)
+        try:
+            registros = list(coleccion_moravia.find())
+            texto_limpio = prompt_organizador_sin_resumir(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
+            st.session_state["texto_ia"] = texto_limpio or "No se obtuvo texto limpio."
+        except Exception as err:
+            st.session_state["texto_ia"] = f"Error inesperado: {err}"
+
+    if st.session_state["texto_ia"]:
+        st.text_area("Registros limpios y estructurados", st.session_state["texto_ia"], height=600)
