@@ -17,7 +17,7 @@ coleccion_moravia = db["moravia"]
 # OpenAI cliente
 openai_client = OpenAI(api_key=st.secrets["openai_api_key"])
 
-# Funciones
+# Función para limpiar texto (para mostrar registros en crudo si es que la usas más adelante)
 def limpiar_texto(texto):
     texto = re.sub(r"^\s*\d+\.\s*", "", texto)
     texto = re.sub(r"^Elementos de Contexto:|^Elementos de la Investigación:|^Elementos de la Intervención:", "", texto, flags=re.IGNORECASE)
@@ -47,9 +47,11 @@ def prompt_estructura_detallada(registros, lugares_clave):
             "Contradicciones en los procesos de intervención"
         ]
     }
-    prompt = ("Organiza los registros por lugar y fecha. Para cada lugar y registro, llena claramente cada subcategoría "
-              "según esta lista exacta de preguntas/categorías propuesta por la profesora.\n"
-              "Limpia, ordena, y formatea para que quede claro y legible sin perder información.\n\n")
+    prompt = (
+        "Organiza los registros por lugar y fecha. Para cada lugar y registro, llena claramente cada subcategoría según esta lista exacta de preguntas/categorías propuesta por la profesora.\n"
+        "Si algún campo está vacío, indica explícitamente '(ninguna información)' para que quede claro.\n"
+        "Devuelve el texto en formato plano, sin símbolos Markdown, sin caracteres raros, bien legible y estructurado para lectura académica.\n\n"
+    )
     for reg in registros:
         fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         lugar = reg.get("lugar", "Sin lugar")
@@ -64,11 +66,13 @@ def prompt_estructura_detallada(registros, lugares_clave):
             else:
                 textos = reg.get("intervencion", [])
             for i, subcat in enumerate(subcats):
-                respuesta = textos[i] if i < len(textos) else ""
-                prompt += f"- {subcat}: {respuesta.strip()}\n"
+                respuesta = textos[i].strip() if i < len(textos) else ""
+                if not respuesta:
+                    respuesta = "(ninguna información)"
+                prompt += f"- {subcat}: {respuesta}\n"
             prompt += "\n"
         prompt += "---\n"
-    prompt += "\nDevuelve el texto limpio, legible y bien estructurado agrupado por lugar y fecha, sin perder detalle.\n"
+    prompt += "\nDevuelve el texto limpio y bien estructurado agrupado por lugar y fecha, respetando todo lo indicado, sin omitir detalle.\n"
 
     try:
         response = openai_client.chat.completions.create(
@@ -91,11 +95,11 @@ def prompt_estructura_detallada(registros, lugares_clave):
         st.error(f"Error al generar estructura con IA: {e}")
         return ""
 
-# Estado inicial
+# Estado inicial para mantener el resultado
 if "texto_estructura" not in st.session_state:
     st.session_state["texto_estructura"] = ""
 
-# Tabs simplificados
+# Solo dos pestañas para simplicidad
 tabs = st.tabs([
     "1. Formulario",
     "2. Organizar registros con estructura detallada y enriquecida",
@@ -151,9 +155,25 @@ with tabs[0]:
 with tabs[1]:
     st.header("2. Organizar registros con estructura detallada y enriquecida")
     if st.button("Organizar con estructura detallada"):
-        registros = list(coleccion_moravia.find())
-        with st.spinner("Generando estructura detallada con IA..."):
-            texto_estructura = prompt_estructura_detallada(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
-        st.session_state["texto_estructura"] = texto_estructura or "No se pudo generar estructura."
+        status_placeholder = st.empty()
+        status_placeholder.text("Obteniendo últimos registros...")
+
+        registros = list(coleccion_moravia.find().sort("fecha_hora", -1).limit(10))
+        registros.reverse()
+
+        status_placeholder.text("Preparando prompt...")
+
+        try:
+            with st.spinner("Generando texto completo y estructurado con IA..."):
+                texto_estructura_raw = prompt_estructura_detallada(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
+
+            # Limpieza básica de saltos dobles
+            texto_estructura = re.sub(r"\n{3,}", "\n\n", texto_estructura_raw).strip()
+            st.session_state["texto_estructura"] = texto_estructura or "(No se pudo generar estructura.)"
+            status_placeholder.text("¡Texto generado correctamente! Puedes verlo abajo.")
+        except Exception as e:
+            status_placeholder.text(f"Error al generar texto: {e}")
+            st.session_state["texto_estructura"] = ""
+
     if st.session_state["texto_estructura"]:
         st.text_area("Texto estructurado detalladamente", st.session_state["texto_estructura"], height=800)
