@@ -24,7 +24,11 @@ def generar_pdf(registros):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
+
+    # Agregar fuente Liberation Mono con soporte Unicode
+    pdf.add_font("LiberationMono", "", "LiberationMono-Regular.ttf", uni=True)
+    pdf.set_font("LiberationMono", size=12)
+
     pdf.cell(0, 10, "Diario de Campo - Moravia 2025", ln=True, align="C")
     pdf.ln(10)
 
@@ -32,9 +36,9 @@ def generar_pdf(registros):
         fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         lugar = reg.get("lugar", "Sin lugar")
 
-        pdf.set_font("Arial", "B", 12)
+        pdf.set_font("LiberationMono", "B", 14)
         pdf.cell(0, 10, f"{fecha_str} — {lugar}", ln=True)
-        pdf.set_font("Arial", "", 11)
+        pdf.set_font("LiberationMono", "", 12)
 
         pdf.cell(0, 8, "Elementos de Contexto:", ln=True)
         for i, resp in enumerate(reg["contexto"], start=1):
@@ -52,7 +56,6 @@ def generar_pdf(registros):
                 pdf.multi_cell(0, 8, f"{i}. {resp}")
 
         pdf.ln(5)
-    # Guardar PDF en buffer
     pdf_buffer = io.BytesIO()
     pdf.output(pdf_buffer)
     pdf_buffer.seek(0)
