@@ -36,7 +36,7 @@ def generar_pdf(registros):
         fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         lugar = reg.get("lugar", "Sin lugar")
 
-        pdf.set_font("LiberationMono", "B", 14)
+        pdf.set_font("LiberationMono", "", 14)
         pdf.cell(0, 10, f"{fecha_str} — {lugar}", ln=True)
         pdf.set_font("LiberationMono", "", 12)
 
