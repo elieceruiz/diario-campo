@@ -9,79 +9,62 @@ import re
 import PyPDF2
 from openai import OpenAI
 
-# === CONFIGURACIÓN ===
+# === Configuración ===
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
 colombia = pytz.timezone("America/Bogota")
 
-# === CONEXIÓN A MONGO ===
+# === MongoDB conexión ===
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
 
-# === CLIENTE OPENAI ===
+# === Cliente OpenAI ===
 openai_client = OpenAI(api_key=st.secrets["openai_api_key"])
 
-# === FUNCIONES ===
+# === Función limpiar texto ===
+def limpiar_texto(texto):
+    texto = re.sub(r"^\s*\d+\.\s*", "", texto)
+    texto = re.sub(r"^Elementos de Contexto:|^Elementos de la Investigación:|^Elementos de la Intervención:", "", texto, flags=re.IGNORECASE)
+    return texto.strip()
 
-def generar_pdf(registros):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.add_font("LiberationMono", "", "LiberationMono-Regular.ttf", uni=True)
-    pdf.set_font("LiberationMono", size=12)
-    pdf.cell(0, 10, "Diario de Campo - Moravia 2025", ln=True, align="C")
-    pdf.ln(10)
+# === Función para organizar y limpiar con IA (sin resumir) ===
+def prompt_organizador_sin_resumir(registros, lugares_clave):
+    registros = sorted(registros, key=lambda r: r["fecha_hora"])
+    prompt = f"Tienes registros crudos con numeraciones y etiquetas, relacionados a estos lugares: {', '.join(lugares_clave)}.\n"
+    prompt += "Límpialos eliminando cualquier numeración, etiqueta clara y repetitiva, pero conserva todo el texto original.\n"
+    prompt += "Organiza los registros por lugar y fecha, manteniendo toda la información, sin sintetizar o resumir.\n\n"
+
     for reg in registros:
-        fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
-        lugar = reg.get("lugar", "Sin lugar")
-        pdf.set_font("LiberationMono", "", 14)
-        pdf.cell(0, 10, f"{fecha_str} — {lugar}", ln=True)
-        pdf.set_font("LiberationMono", "", 12)
-        pdf.cell(0, 8, "Elementos de Contexto:", ln=True)
-        for i, resp in enumerate(reg["contexto"], start=1):
-            if resp.strip():
-                pdf.multi_cell(0, 8, f"{i}. {resp}")
-        pdf.cell(0, 8, "Elementos de la Investigación:", ln=True)
-        for i, resp in enumerate(reg["investigacion"], start=1):
-            if resp.strip():
-                pdf.multi_cell(0, 8, f"{i}. {resp}")
-        pdf.cell(0, 8, "Elementos de la Intervención:", ln=True)
-        for i, resp in enumerate(reg["intervencion"], start=1):
-            if resp.strip():
-                pdf.multi_cell(0, 8, f"{i}. {resp}")
-        pdf.ln(5)
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
-    pdf_buffer = io.BytesIO(pdf_bytes)
-    pdf_buffer.seek(0)
-    return pdf_buffer
-
-def estructurar_registros_con_gpt(registros):
-    registros_ordenados = sorted(registros, key=lambda r: r["fecha_hora"])
-    prompt = "Organiza y resume estos registros de un diario de campo por lugar, en orden cronológico, resaltando los puntos más importantes:\n\n"
-    for reg in registros_ordenados:
         fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         lugar = reg.get("lugar", "Sin lugar")
-        contexto = "\n".join([c for c in reg.get("contexto", []) if c.strip()])
-        investigacion = "\n".join([i for i in reg.get("investigacion", []) if i.strip()])
-        intervencion = "\n".join([iv for iv in reg.get("intervencion", []) if iv.strip()])
-        prompt += f"Fecha: {fecha}\nLugar: {lugar}\nContexto: {contexto}\nInvestigación: {investigacion}\nIntervención: {intervencion}\n---\n"
-    prompt += "\nResumen ordenado por lugar y fecha:"
+        prompt += f"[{fecha} - {lugar}]\n"
+        for seccion in ["contexto", "investigacion", "intervencion"]:
+            textos = reg.get(seccion, [])
+            for t in textos:
+                if t.strip():
+                    prompt += f"{t.strip()}\n"
+        prompt += "\n---\n"
+
+    prompt += "\nDevuélvelos organizados y limpios, sin eliminar texto, solo quitando etiquetas y numeraciones innecesarias para lecturabilidad.\n"
 
     try:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "Eres un asistente que organiza y resume textos."},
+                {"role": "system", "content": "Eres un asistente que organiza y limpia textos sin resumir."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=600,
-            temperature=0.5,
+            max_tokens=2000,
+            temperature=0.3,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        return f"Error con la API OpenAI: {str(e)}"
+        return f"Error con OpenAI: {str(e)}"
 
-# === FORMULARIO PLEGADO ===
+# === Código Base original ===
+st.title("📓 Diario de Campo - Moravia 2025")
+st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
+
 with st.expander("Nueva entrada", expanded=False):
     with st.form("entrada_moravia", clear_on_submit=True):
         lugar = st.text_input("📍 Lugar o punto del recorrido", placeholder="Ej: Centro Cultural de Moravia")
@@ -122,10 +105,9 @@ with st.expander("Nueva entrada", expanded=False):
         coleccion_moravia.insert_one(registro)
         st.success("✅ Entrada guardada correctamente.")
 
-# === HISTORIAL PLEGADO ===
 with st.expander("Historial", expanded=False):
-    registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
-    for reg in registros:
+    registros_hist = list(coleccion_moravia.find().sort("fecha_hora", -1))
+    for reg in registros_hist:
         fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         with st.expander(f"{fecha_str} — {reg.get('lugar', 'Sin lugar')}"):
             st.markdown("**Elementos de Contexto**")
@@ -141,11 +123,10 @@ with st.expander("Historial", expanded=False):
                 img_bytes = base64.b64decode(reg["foto"])
                 st.image(img_bytes, use_container_width=True)
 
-# === BOTÓN PARA EXPORTAR PDF ===
 if st.button("📄 Exportar todo a PDF"):
-    registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
-    if registros:
-        pdf_data = generar_pdf(registros)
+    registros_export = list(coleccion_moravia.find().sort("fecha_hora", -1))
+    if registros_export:
+        pdf_data = generar_pdf(registros_export)
         st.download_button(
             "Descargar PDF",
             data=pdf_data,
@@ -155,36 +136,13 @@ if st.button("📄 Exportar todo a PDF"):
     else:
         st.warning("No hay registros para exportar.")
 
-# === Nueva pestaña para subir PDF y procesar con GPT ===
-tabs = st.tabs(["Base / Nuevo Registro", "Procesar PDF con GPT"])
+# === Pestañas ===
+tabs = st.tabs(["Base / Nuevo registro", "Procesar registros con IA"])
 
 with tabs[1]:
-    st.header("Sube un PDF para procesar con OpenAI GPT")
-    uploaded_file = st.file_uploader("Selecciona un archivo PDF", type=["pdf"])
+    st.header("Organizar y limpiar registros con OpenAI (sin resumir)")
 
-    if uploaded_file is not None:
-        reader = PyPDF2.PdfReader(uploaded_file)
-        full_text = ""
-        for page in reader.pages:
-            text = page.extract_text()
-            if text:
-                full_text += text + "\n"
-
-        st.text_area("Texto extraído del PDF", full_text, height=300)
-
-        if st.button("Procesar texto con OpenAI"):
-            prompt = f"Dale sentido y haz un resumen organizado de este texto:\n\n{full_text}"
-            try:
-                response = openai_client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "Eres un asistente que organiza y resume textos."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    max_tokens=700,
-                    temperature=0.5,
-                )
-                resumen = response.choices[0].message.content.strip()
-                st.text_area("Resumen generado por OpenAI:", resumen, height=400)
-            except Exception as e:
-                st.error(f"Error al llamar a OpenAI: {e}")
+    if st.button("Organizar y limpiar registros con IA sin resumir"):
+        registros = list(coleccion_moravia.find())
+        texto_limpio = prompt_organizador_sin_resumir(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
+        st.text_area("Registros limpios y estructurados", texto_limpio, height=600)
