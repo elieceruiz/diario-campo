@@ -3,6 +3,8 @@ from datetime import datetime
 from pymongo import MongoClient
 import pytz
 import base64
+from fpdf import FPDF
+import io
 
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
@@ -16,6 +18,45 @@ coleccion_moravia = db["moravia"]
 # === TÍTULO ===
 st.title("📓 Diario de Campo - Moravia 2025")
 st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
+
+# === FUNCIONES ===
+def generar_pdf(registros):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Diario de Campo - Moravia 2025", ln=True, align="C")
+    pdf.ln(10)
+
+    for reg in registros:
+        fecha_str = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
+        lugar = reg.get("lugar", "Sin lugar")
+
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 10, f"{fecha_str} — {lugar}", ln=True)
+        pdf.set_font("Arial", "", 11)
+
+        pdf.cell(0, 8, "Elementos de Contexto:", ln=True)
+        for i, resp in enumerate(reg["contexto"], start=1):
+            if resp.strip():
+                pdf.multi_cell(0, 8, f"{i}. {resp}")
+
+        pdf.cell(0, 8, "Elementos de la Investigación:", ln=True)
+        for i, resp in enumerate(reg["investigacion"], start=1):
+            if resp.strip():
+                pdf.multi_cell(0, 8, f"{i}. {resp}")
+
+        pdf.cell(0, 8, "Elementos de la Intervención:", ln=True)
+        for i, resp in enumerate(reg["intervencion"], start=1):
+            if resp.strip():
+                pdf.multi_cell(0, 8, f"{i}. {resp}")
+
+        pdf.ln(5)
+    # Guardar PDF en buffer
+    pdf_buffer = io.BytesIO()
+    pdf.output(pdf_buffer)
+    pdf_buffer.seek(0)
+    return pdf_buffer
 
 # === FORMULARIO PLEGADO ===
 with st.expander("Nueva entrada", expanded=False):
@@ -85,3 +126,17 @@ with st.expander("Historial", expanded=False):
             if reg.get("foto"):
                 img_bytes = base64.b64decode(reg["foto"])
                 st.image(img_bytes, use_container_width=True)
+
+# === BOTÓN PARA EXPORTAR PDF ===
+if st.button("📄 Exportar todo a PDF"):
+    registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
+    if registros:
+        pdf_data = generar_pdf(registros)
+        st.download_button(
+            "Descargar PDF",
+            data=pdf_data,
+            file_name="diario_campo_moravia.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.warning("No hay registros para exportar.")
