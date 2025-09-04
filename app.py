@@ -9,7 +9,7 @@ from openai import OpenAI
 st.set_page_config(page_title="Diario de Campo - Moravia", layout="centered")
 colombia = pytz.timezone("America/Bogota")
 
-# MongoDB
+# MongoDB conexión
 client = MongoClient(st.secrets["mongo_uri"])
 db = client["diario_campo"]
 coleccion_moravia = db["moravia"]
@@ -18,7 +18,6 @@ coleccion_moravia = db["moravia"]
 openai_client = OpenAI(api_key=st.secrets["openai_api_key"])
 
 # Funciones
-
 def limpiar_texto(texto):
     texto = re.sub(r"^\s*\d+\.\s*", "", texto)
     texto = re.sub(r"^Elementos de Contexto:|^Elementos de la Investigación:|^Elementos de la Intervención:", "", texto, flags=re.IGNORECASE)
@@ -54,79 +53,86 @@ def mostrar_registros_crudos_ordenados():
                 if txt: st.write(f"- {txt}")
             hora_anter = hora_actual
 
-def prompt_organizador_sin_resumir(registros, lugares_clave):
+def prompt_estructura_detallada(registros, lugares_clave):
     registros = sorted(registros, key=lambda r: r["fecha_hora"])
-    prompt = f"Tienes registros crudos con numeraciones y etiquetas, relacionados a estos lugares: {', '.join(lugares_clave)}.\n"
-    prompt += "Límpialos eliminando cualquier numeración, etiqueta clara y repetitiva, pero conserva todo el texto original.\n"
-    prompt += "Organiza los registros por lugar y fecha, manteniendo toda la información, sin sintetizar o resumir.\n\n"
-    for reg in registros:
-        fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
-        lugar = reg.get("lugar", "Sin lugar")
-        prompt += f"[{fecha} - {lugar}]\n"
-        for seccion in ["contexto", "investigacion", "intervencion"]:
-            textos = reg.get(seccion, [])
-            for t in textos:
-                if t.strip():
-                    prompt += f"{t.strip()}\n"
-        prompt += "\n---\n"
-    prompt += "\nDevuélvelos organizados y limpios, sin eliminar texto, solo quitando etiquetas y numeraciones innecesarias para lecturabilidad.\n"
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Eres un asistente que organiza y limpia textos sin resumir."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=2000,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Error con OpenAI: {str(e)}"
+    categorias = {
+        "A. Elementos de Contexto": [
+            "Principales hitos en la transformación territorial",
+            "Actores individuales y colectivos claves en la configuración del territorio",
+            "Principales transformaciones urbanas y su impacto social",
+            "Relaciones intergeneracionales e interculturales",
+            "Tensiones/conflictos en la concepción del territorio",
+            "Matrices de opresión identificadas en el territorio"
+        ],
+        "B. Elementos asociados a la investigación": [
+            "Particularidades de la investigación en Moravia",
+            "Intereses que movilizan las investigaciones",
+            "Nexos entre investigación – acción – transformación"
+        ],
+        "C. Elementos de la intervención": [
+            "Actores que movilizan procesos de intervención barrial",
+            "Propuestas de intervención comunitarias",
+            "Propuestas de intervención institucionales",
+            "Papel de la memoria en los procesos de transformación territorial",
+            "Contradicciones en los procesos de intervención"
+        ]
+    }
 
-def prompt_dar_sentido_y_ubicar(registros, lugares_clave):
-    registros = sorted(registros, key=lambda r: r["fecha_hora"])
-    prompt = (
-        f"Estos son registros tomados en campo, divididos en distintas áreas propuestas por la profesora:\n"
-        f"- Elementos de Contexto\n- Elementos de la Investigación\n- Elementos de la Intervención\n"
-        f"\nDebes interpretar cada texto y ubicarlo en la categoría correcta, organizando todo por lugar y fecha cronológica.\n"
-        f"Da sentido al texto, estructúrale pero sin perder los detalles importantes. Elimina repeticiones y contenido claramente irrelevante.\n\n"
-    )
+    prompt = ("Organiza los registros por lugar y fecha. Para cada lugar y registro, llena claramente cada subcategoría "
+              "según esta lista exacta de preguntas/categorías propuesta por la profesora.\n"
+              "Limpia, ordena, y formatea para que quede claro y legible sin perder información.\n\n")
+
     for reg in registros:
         fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         lugar = reg.get("lugar", "Sin lugar")
         prompt += f"Lugar: {lugar}, Fecha: {fecha}\n"
-        for campo, key in [("Elementos de Contexto", "contexto"), ("Elementos de la Investigación", "investigacion"), ("Elementos de la Intervención", "intervencion")]:
-            textos = reg.get(key, [])
-            if any(t.strip() for t in textos):
-                prompt += f"{campo}:\n"
-                for t in textos:
-                    if t.strip():
-                        prompt += f"- {t.strip()}\n"
-        prompt += "\n---\n"
-    prompt += "\nDevuelve un texto organizado con las categorías y registros claramente diferenciados, ordenados cronológicamente y por lugar."
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages = [
-                {"role": "system", "content": "Eres un asistente que organiza y da sentido profundo a registros de campo para trabajo académico."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=3000,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Error en OpenAI: {str(e)}"
+        for bloque, subcats in categorias.items():
+            prompt += f"{bloque}:\n"
+            textos = []
+            if bloque == "A. Elementos de Contexto":
+                textos = reg.get("contexto", [])
+            elif bloque == "B. Elementos asociados a la investigación":
+                textos = reg.get("investigacion", [])
+            else:
+                textos = reg.get("intervencion", [])
 
-# Inicializar estados
-if "texto_ia" not in st.session_state:
-    st.session_state["texto_ia"] = ""
-if "texto_consentido" not in st.session_state:
-    st.session_state["texto_consentido"] = ""
+            for i, subcat in enumerate(subcats):
+                respuesta = textos[i] if i < len(textos) else ""
+                prompt += f"- {subcat}: {respuesta.strip()}\n"
 
-# Tabs sólida y orden
-tabs = st.tabs(["1. Formulario", "2. Visualizar crudos", "3. Depurar IA", "4. Dar sentido IA"])
+            prompt += "\n"
+        prompt += "---\n"
+
+    prompt += "\nDevuelve el texto limpio, legible y bien estructurado agrupado por lugar y fecha, sin perder detalle.\n"
+
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": "Actúa como un experto en organización y estructuración de información para trabajo académico."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        max_tokens=3500,
+        temperature=0.3,
+    )
+
+    return response.choices[0].message.content.strip()
+
+# Estados iniciales
+if "texto_estructura" not in st.session_state:
+    st.session_state["texto_estructura"] = ""
+
+# Tabs
+tabs = st.tabs([
+    "1. Formulario",
+    "2. Visualizar crudos",
+    "3. Organizar estructura detallada IA",
+])
 
 with tabs[0]:
     st.header("1. Ingresar nueva entrada")
@@ -170,23 +176,14 @@ with tabs[0]:
         st.success("Entrada guardada.")
 
 with tabs[1]:
-    st.header("2. Visualizar registros crudos organizados")
+    st.header("2. Visualizar registros crudos ordenados")
     mostrar_registros_crudos_ordenados()
 
 with tabs[2]:
-    st.header("3. Depurar y organizar con IA (sin resumir)")
-    if st.button("Procesar limpieza IA"):
+    st.header("3. Organizar registros con estructura detallada y enriquecida")
+    if st.button("Organizar con estructura detallada"):
         registros = list(coleccion_moravia.find())
-        texto_limpio = prompt_organizador_sin_resumir(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
-        st.session_state["texto_ia"] = texto_limpio or "No se obtuvo texto."
-    if st.session_state["texto_ia"]:
-        st.text_area("Texto limpio IA", st.session_state["texto_ia"], height=600)
-
-with tabs[3]:
-    st.header("4. Dar sentido y estructura final según profesora")
-    if st.button("Interpretar y ubicar IA"):
-        registros = list(coleccion_moravia.find())
-        texto_final = prompt_dar_sentido_y_ubicar(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
-        st.session_state["texto_consentido"] = texto_final or "No se pudo generar texto."
-    if st.session_state["texto_consentido"]:
-        st.text_area("Texto con sentido IA", st.session_state["texto_consentido"], height=700)
+        texto_estructura = prompt_estructura_detallada(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
+        st.session_state["texto_estructura"] = texto_estructura or "No se pudo generar estructura."
+    if st.session_state["texto_estructura"]:
+        st.text_area("Texto estructurado detalladamente", st.session_state["texto_estructura"], height=800)
