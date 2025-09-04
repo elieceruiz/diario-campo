@@ -57,7 +57,8 @@ def generar_pdf(registros):
 
         pdf.ln(5)
     pdf_buffer = io.BytesIO()
-    pdf.output(pdf_buffer)
+    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    pdf_buffer = io.BytesIO(pdf_bytes)
     pdf_buffer.seek(0)
     return pdf_buffer
 
