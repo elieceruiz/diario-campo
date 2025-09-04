@@ -28,6 +28,7 @@ LUGARES_FIJOS = [
 ]
 
 # === FUNCIONES ===
+
 def generar_pdf(registros):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -81,7 +82,8 @@ def concatenar_textos(registros, campo):
     return "\n\n".join([t for t in textos if t.strip()])
 
 def cargar_registros_por_lugar(lugar):
-    return list(coleccion_moravia.find({"lugar": {"$regex": lugar, "$options":"i"}}).sort("fecha_hora", 1))
+    # Aquí simple regex case-insensitive para buscar lugar exacto
+    return list(coleccion_moravia.find({"lugar": {"$regex": f"^{lugar}$", "$options":"i"}}).sort("fecha_hora", 1))
 
 def cargar_todo_texto_consolidado():
     registros = list(coleccion_moravia.find().sort("fecha_hora", 1))
@@ -103,37 +105,36 @@ def guardar_lugar(lugar,texto_ctx,texto_inv,texto_int):
     }
     coleccion_moravia.insert_one(doc)
 
-# === TÍTULO ===
+# === UI ===
 st.title("📓 Diario de Campo - Moravia 2025")
 st.caption("Registro guiado con base en las preguntas orientadoras de la salida de campo.")
 
 tabs = st.tabs(["Base/Formulario"] + LUGARES_FIJOS)
 
-# --- Pestaña 1: Formulario Base + Texto Consolidado ---
 with tabs[0]:
     st.header("Formulario Base y Registros")
     with st.expander("Nueva entrada", expanded=False):
         with st.form("entrada_moravia", clear_on_submit=True):
-            lugar = st.text_input("📍 Lugar o punto del recorrido", placeholder="Ej: Centro Cultural de Moravia")
+            lugar = st.text_input("📍 Lugar o punto del recorrido", placeholder="Ej: Centro Cultural de Moravia", key="input_lugar")
             st.subheader("A. Elementos de Contexto")
-            ctx1 = st.text_area("1. Principales hitos en la transformación territorial")
-            ctx2 = st.text_area("2. Actores individuales y colectivos claves en la configuración del territorio")
-            ctx3 = st.text_area("3. Principales transformaciones urbanas y su impacto social")
-            ctx4 = st.text_area("4. Relaciones intergeneracionales e interculturales")
-            ctx5 = st.text_area("5. Tensiones/conflictos en la concepción del territorio")
-            ctx6 = st.text_area("6. Matrices de opresión identificadas en el territorio")
+            ctx1 = st.text_area("1. Principales hitos en la transformación territorial", key="ctx1")
+            ctx2 = st.text_area("2. Actores individuales y colectivos claves en la configuración del territorio", key="ctx2")
+            ctx3 = st.text_area("3. Principales transformaciones urbanas y su impacto social", key="ctx3")
+            ctx4 = st.text_area("4. Relaciones intergeneracionales e interculturales", key="ctx4")
+            ctx5 = st.text_area("5. Tensiones/conflictos en la concepción del territorio", key="ctx5")
+            ctx6 = st.text_area("6. Matrices de opresión identificadas en el territorio", key="ctx6")
             st.subheader("B. Elementos asociados a la investigación")
-            inv1 = st.text_area("1. Particularidades de la investigación en Moravia (técnicas, relación con grupos sociales, lugar del sujeto, alcances, quién investiga)")
-            inv2 = st.text_area("2. Intereses que movilizan las investigaciones")
-            inv3 = st.text_area("3. Nexos entre investigación – acción – transformación")
+            inv1 = st.text_area("1. Particularidades de la investigación en Moravia (técnicas, relación con grupos sociales, lugar del sujeto, alcances, quién investiga)", key="inv1")
+            inv2 = st.text_area("2. Intereses que movilizan las investigaciones", key="inv2")
+            inv3 = st.text_area("3. Nexos entre investigación – acción – transformación", key="inv3")
             st.subheader("C. Elementos de la intervención")
-            int1 = st.text_area("1. Actores que movilizan procesos de intervención barrial")
-            int2 = st.text_area("2. Propuestas de intervención comunitarias (tipo, características)")
-            int3 = st.text_area("3. Propuestas de intervención institucionales (tipo, características)")
-            int4 = st.text_area("4. Papel de la memoria en los procesos de transformación territorial")
-            int5 = st.text_area("5. Contradicciones en los procesos de intervención")
-            foto = st.file_uploader("📷 Subir foto (opcional)", type=["jpg", "jpeg", "png"])
-            guardar = st.form_submit_button("💾 Guardar entrada")
+            int1 = st.text_area("1. Actores que movilizan procesos de intervención barrial", key="int1")
+            int2 = st.text_area("2. Propuestas de intervención comunitarias (tipo, características)", key="int2")
+            int3 = st.text_area("3. Propuestas de intervención institucionales (tipo, características)", key="int3")
+            int4 = st.text_area("4. Papel de la memoria en los procesos de transformación territorial", key="int4")
+            int5 = st.text_area("5. Contradicciones en los procesos de intervención", key="int5")
+            foto = st.file_uploader("📷 Subir foto (opcional)", type=["jpg", "jpeg", "png"], key="foto_uploader")
+            guardar = st.form_submit_button("💾 Guardar entrada", key="guardar_btn")
         if guardar:
             fecha_hora = datetime.now(colombia)
             foto_base64 = None
@@ -151,11 +152,11 @@ with tabs[0]:
             }
             coleccion_moravia.insert_one(registro)
             st.success("✅ Entrada guardada correctamente.")
-    if st.button("Mostrar texto consolidado registrado"):
+    if st.button("Mostrar texto consolidado registrado", key="mostrar_consolidado"):
         contenido_mierdero = cargar_todo_texto_consolidado()
         st.text_area("Texto Consolidado", contenido_mierdero, height=400)
 
-    if st.button("📄 Exportar todo a PDF"):
+    if st.button("📄 Exportar todo a PDF", key="exportar_pdf"):
         registros = list(coleccion_moravia.find().sort("fecha_hora", -1))
         if registros:
             pdf_data = generar_pdf(registros)
@@ -168,7 +169,6 @@ with tabs[0]:
         else:
             st.warning("No hay registros para exportar.")
 
-# --- Pestañas por lugar ---
 for i, lugar in enumerate(LUGARES_FIJOS, start=1):
     with tabs[i]:
         st.header(lugar)
@@ -178,18 +178,18 @@ for i, lugar in enumerate(LUGARES_FIJOS, start=1):
         investigacion = concatenar_textos(registros_lugar, "investigacion")
         intervencion = concatenar_textos(registros_lugar, "intervencion")
 
-        contexto_edit = st.text_area("Elementos de Contexto", contexto, height=150)
-        investigacion_edit = st.text_area("Elementos de la Investigación", investigacion, height=150)
-        intervencion_edit = st.text_area("Elementos de la Intervención", intervencion, height=150)
+        contexto_edit = st.text_area("Elementos de Contexto", contexto, height=150, key=f"contexto_{i}")
+        investigacion_edit = st.text_area("Elementos de la Investigación", investigacion, height=150, key=f"investigacion_{i}")
+        intervencion_edit = st.text_area("Elementos de la Intervención", intervencion, height=150, key=f"intervencion_{i}")
 
-        if st.button(f"Generar sugerencias GPT para {lugar}", key=f"gpt_{lugar}"):
+        if st.button(f"Generar sugerencias GPT para {lugar}", key=f"gpt_{i}"):
             sug_ctx = obtener_sugerencia_gpt(contexto_edit, "Contexto")
             sug_inv = obtener_sugerencia_gpt(investigacion_edit, "Investigación")
             sug_int = obtener_sugerencia_gpt(intervencion_edit, "Intervención")
-            st.text_area(f"Sugerencia Contexto {lugar}", value=sug_ctx, height=100)
-            st.text_area(f"Sugerencia Investigación {lugar}", value=sug_inv, height=100)
-            st.text_area(f"Sugerencia Intervención {lugar}", value=sug_int, height=100)
+            st.text_area(f"Sugerencia Contexto {lugar}", value=sug_ctx, height=100, key=f"sug_ctx_{i}")
+            st.text_area(f"Sugerencia Investigación {lugar}", value=sug_inv, height=100, key=f"sug_inv_{i}")
+            st.text_area(f"Sugerencia Intervención {lugar}", value=sug_int, height=100, key=f"sug_int_{i}")
 
-        if st.button(f"Guardar cambios en Mongo para {lugar}", key=f"save_{lugar}"):
+        if st.button(f"Guardar cambios en Mongo para {lugar}", key=f"save_{i}"):
             guardar_lugar(lugar, contexto_edit, investigacion_edit, intervencion_edit)
             st.success(f"Datos guardados para {lugar}")
