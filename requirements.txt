@@ -4,3 +4,4 @@ pytz
 Pillow
 fpdf
 openai
+PyPDF2
