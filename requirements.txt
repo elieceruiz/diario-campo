@@ -3,3 +3,4 @@ pymongo
 pytz
 Pillow
 fpdf
+openai
