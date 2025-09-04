@@ -17,11 +17,41 @@ coleccion_moravia = db["moravia"]
 # OpenAI cliente
 openai_client = OpenAI(api_key=st.secrets["openai_api_key"])
 
-# Función para limpiar texto (para mostrar registros en crudo si es que la usas más adelante)
+# Funciones
 def limpiar_texto(texto):
     texto = re.sub(r"^\s*\d+\.\s*", "", texto)
     texto = re.sub(r"^Elementos de Contexto:|^Elementos de la Investigación:|^Elementos de la Intervención:", "", texto, flags=re.IGNORECASE)
     return texto.strip()
+
+def mostrar_registros_crudos_ordenados():
+    LUGARES = ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"]
+    for lugar in LUGARES:
+        st.subheader(f"Registros en {lugar}")
+        regs = list(coleccion_moravia.find({"lugar": {"$regex": lugar, "$options": "i"}}).sort("fecha_hora", 1))
+        if not regs:
+            st.write("No hay registros.")
+            continue
+        hora_anter = None
+        for r in regs:
+            fecha = r["fecha_hora"].astimezone(colombia)
+            hora_actual = fecha.strftime("%Y-%m-%d %H")
+            if hora_anter and hora_actual != hora_anter:
+                st.markdown("---")
+                st.markdown(f"**Cambio de hora: {hora_actual}:00**")
+            st.markdown(f"**{fecha.strftime('%Y-%m-%d %H:%M')}**")
+            st.write("Contexto:")
+            for c in r.get("contexto", []):
+                txt = limpiar_texto(c)
+                if txt: st.write(f"- {txt}")
+            st.write("Investigación:")
+            for i in r.get("investigacion", []):
+                txt = limpiar_texto(i)
+                if txt: st.write(f"- {txt}")
+            st.write("Intervención:")
+            for it in r.get("intervencion", []):
+                txt = limpiar_texto(it)
+                if txt: st.write(f"- {txt}")
+            hora_anter = hora_actual
 
 def prompt_estructura_detallada(registros, lugares_clave):
     registros = sorted(registros, key=lambda r: r["fecha_hora"])
@@ -47,11 +77,11 @@ def prompt_estructura_detallada(registros, lugares_clave):
             "Contradicciones en los procesos de intervención"
         ]
     }
-    prompt = (
-        "Organiza los registros por lugar y fecha. Para cada lugar y registro, llena claramente cada subcategoría según esta lista exacta de preguntas/categorías propuesta por la profesora.\n"
-        "Si algún campo está vacío, indica explícitamente '(ninguna información)' para que quede claro.\n"
-        "Devuelve el texto en formato plano, sin símbolos Markdown, sin caracteres raros, bien legible y estructurado para lectura académica.\n\n"
-    )
+
+    prompt = ("Organiza los registros por lugar y fecha. Para cada lugar y registro, llena claramente cada subcategoría "
+              "según esta lista exacta de preguntas/categorías propuesta por la profesora.\n"
+              "Limpia, ordena, y formatea para que quede claro y legible sin perder información.\n\n")
+
     for reg in registros:
         fecha = reg["fecha_hora"].astimezone(colombia).strftime("%Y-%m-%d %H:%M")
         lugar = reg.get("lugar", "Sin lugar")
@@ -65,44 +95,43 @@ def prompt_estructura_detallada(registros, lugares_clave):
                 textos = reg.get("investigacion", [])
             else:
                 textos = reg.get("intervencion", [])
+
             for i, subcat in enumerate(subcats):
-                respuesta = textos[i].strip() if i < len(textos) else ""
-                if not respuesta:
-                    respuesta = "(ninguna información)"
-                prompt += f"- {subcat}: {respuesta}\n"
+                respuesta = textos[i] if i < len(textos) else ""
+                prompt += f"- {subcat}: {respuesta.strip()}\n"
+
             prompt += "\n"
         prompt += "---\n"
-    prompt += "\nDevuelve el texto limpio y bien estructurado agrupado por lugar y fecha, respetando todo lo indicado, sin omitir detalle.\n"
 
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Actúa como un experto en organización y estructuración de información para trabajo académico."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            max_tokens=3500,
-            temperature=0.3,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        st.error(f"Error al generar estructura con IA: {e}")
-        return ""
+    prompt += "\nDevuelve el texto limpio, legible y bien estructurado agrupado por lugar y fecha, sin perder detalle.\n"
 
-# Estado inicial para mantener el resultado
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": "Actúa como un experto en organización y estructuración de información para trabajo académico."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        max_tokens=3500,
+        temperature=0.3,
+    )
+
+    return response.choices[0].message.content.strip()
+
+# Estados iniciales
 if "texto_estructura" not in st.session_state:
     st.session_state["texto_estructura"] = ""
 
-# Solo dos pestañas para simplicidad
+# Tabs
 tabs = st.tabs([
     "1. Formulario",
-    "2. Organizar registros con estructura detallada y enriquecida",
+    "2. Visualizar crudos",
+    "3. Organizar estructura detallada IA",
 ])
 
 with tabs[0]:
@@ -128,52 +157,33 @@ with tabs[0]:
         int5 = st.text_area("5. Contradicciones en los procesos de intervención")
         foto = st.file_uploader("Foto (opcional)", type=["jpg", "jpeg", "png"])
         guardar = st.form_submit_button("Guardar entrada")
-
     if guardar:
-        if not lugar.strip():
-            st.error("Por favor ingresa un lugar o punto del recorrido.")
-        elif all(not f.strip() for f in [ctx1, ctx2, ctx3, ctx4, ctx5, ctx6, inv1, inv2, inv3, int1, int2, int3, int4, int5]):
-            st.error("Por favor completa al menos un campo en la entrada.")
-        else:
-            fecha_hora = datetime.now(colombia)
-            foto_base64 = None
-            if foto:
-                foto_bytes = foto.read()
-                if foto_bytes:
-                    foto_base64 = base64.b64encode(foto_bytes).decode("utf-8")
-            registro = {
-                "fecha_hora": fecha_hora,
-                "lugar": lugar.strip(),
-                "contexto": [ctx1, ctx2, ctx3, ctx4, ctx5, ctx6],
-                "investigacion": [inv1, inv2, inv3],
-                "intervencion": [int1, int2, int3, int4, int5],
-                "foto": foto_base64
-            }
-            coleccion_moravia.insert_one(registro)
-            st.success("Entrada guardada.")
+        fecha_hora = datetime.now(colombia)
+        foto_base64 = None
+        if foto:
+            foto_bytes = foto.read()
+            if foto_bytes:
+                foto_base64 = base64.b64encode(foto_bytes).decode("utf-8")
+        registro = {
+            "fecha_hora": fecha_hora,
+            "lugar": lugar.strip(),
+            "contexto": [ctx1, ctx2, ctx3, ctx4, ctx5, ctx6],
+            "investigacion": [inv1, inv2, inv3],
+            "intervencion": [int1, int2, int3, int4, int5],
+            "foto": foto_base64
+        }
+        coleccion_moravia.insert_one(registro)
+        st.success("Entrada guardada.")
 
 with tabs[1]:
-    st.header("2. Organizar registros con estructura detallada y enriquecida")
+    st.header("2. Visualizar registros crudos ordenados")
+    mostrar_registros_crudos_ordenados()
+
+with tabs[2]:
+    st.header("3. Organizar registros con estructura detallada y enriquecida")
     if st.button("Organizar con estructura detallada"):
-        status_placeholder = st.empty()
-        status_placeholder.text("Obteniendo últimos registros...")
-
-        registros = list(coleccion_moravia.find().sort("fecha_hora", -1).limit(10))
-        registros.reverse()
-
-        status_placeholder.text("Preparando prompt...")
-
-        try:
-            with st.spinner("Generando texto completo y estructurado con IA..."):
-                texto_estructura_raw = prompt_estructura_detallada(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
-
-            # Limpieza básica de saltos dobles
-            texto_estructura = re.sub(r"\n{3,}", "\n\n", texto_estructura_raw).strip()
-            st.session_state["texto_estructura"] = texto_estructura or "(No se pudo generar estructura.)"
-            status_placeholder.text("¡Texto generado correctamente! Puedes verlo abajo.")
-        except Exception as e:
-            status_placeholder.text(f"Error al generar texto: {e}")
-            st.session_state["texto_estructura"] = ""
-
+        registros = list(coleccion_moravia.find())
+        texto_estructura = prompt_estructura_detallada(registros, ["Casa Cultural", "Viveros", "Almuerzo", "Barbería"])
+        st.session_state["texto_estructura"] = texto_estructura or "No se pudo generar estructura."
     if st.session_state["texto_estructura"]:
         st.text_area("Texto estructurado detalladamente", st.session_state["texto_estructura"], height=800)
